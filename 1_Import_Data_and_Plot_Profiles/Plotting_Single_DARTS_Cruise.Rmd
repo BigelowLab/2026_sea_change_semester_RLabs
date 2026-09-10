@@ -114,7 +114,7 @@ Let's think through the steps we're going to need to do before we start:
 We need to pull out all rows of data that correspond to Station 1.  We will do this using a process called *filtering*. We will use the function `filter` from the package `dplyr` (part of the tinyverse). It looks like this:
 
 ```{r}
-stn1 <- dplyr::filter(data, station == 1)
+stn1 <- dplyr::filter(data, station == "S1")
 ```
 
 **What did we just do?** The double equals sign is a *conditional*, it's telling R to go through the data frame and identify rows where the condition of equality is met for the specified variables (in this case, where the station column equaled 1).
@@ -136,7 +136,7 @@ When plotting, we can tell R which columns of our data frame we'd like it to plo
 Time to plot! We're going to use a package called `ggplot2`... we will go into greater depth later about how exactly ggplot is working, for now, here's the code to plot a temperature profile:
 
 ```{r}
-ggplot(stn1, aes(x = temp_C, y = depth_m)) + geom_point()
+ggplot(stn1, aes(x = temp_c, y = depth_m)) + geom_point()
 ```
 
 How does this look? Is there anything wrong with this plot?
@@ -144,7 +144,7 @@ How does this look? Is there anything wrong with this plot?
 In oceanography, we like to orient ocean data from the surface on the top of the y axis and depth at the bottom of the y axis, so we need to flip our plot (aka reverse our y axis) - note, part of programming is learning the language to use:
 
 ```{r}
-ggplot(stn1, aes(x = temp_C, y = depth_m)) + 
+ggplot(stn1, aes(x = temp_c, y = depth_m)) + 
   geom_point() + 
   scale_y_reverse()
 ```
@@ -152,7 +152,7 @@ ggplot(stn1, aes(x = temp_C, y = depth_m)) +
 R has automatically named our axes using the data frame column names. This is super handy for quick plotting, but often we want to relabel them into something more informative:
 
 ```{r}
-ggplot(stn1, aes(x = temp_C, y = depth_m)) + 
+ggplot(stn1, aes(x = temp_c, y = depth_m)) + 
   geom_point() + 
   scale_y_reverse() + 
   xlab('Temperature (C)') + 
