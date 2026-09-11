@@ -1,0 +1,68 @@
+---
+title: "Extra Content: Making DaRTS R Friendly"
+output: 
+  pdf_document: default
+  github_document: default
+  html_document: default
+  html_notebook: default
+---
+
+# Background
+
+There's a copy of the DaRTS data on the Google Classroom (this may also be shared with you in the Field Course): DaRTS_cruise_data_2012-2025 - 20251117.xlsx. This is a large Excel file, with lots of different sheets and some formatting issues that R doesn't like. To work with this data in R, we need to make it R friendly.
+
+# Formatting CTD Data
+
+1. Download the DaRTS_cruise_data_2012-2025 - 20251117.xlsx 
+2. Save the DaRTS file in a sensible location (e.g. your R labs data folder)
+2. Open DaRTS_cruise_data_2012-2025 - 20251117.xlsx
+2. Go to the "CTD all years" sheet
+
+If you opened the file in Excel:
+
+1. Go to "File" -> "Save As" and in the "Save File Type" box, select to save the file as a "CSV (Comma delimited)" file named DaRTS_CTD_data (selecting "OK"" to the windows that pop up)
+2. Exit the Excel file (selecting "Don't save" i.e., you don't want to save changes if asked.)
+3. Open the csv file you just created in Excel (the easiest way to do this is open Excel, then do "File" -> "Open" -> "Browse", then navigate to the file and select "Open")
+
+If you opened the file in Numbers:
+
+1. Go to "File" -> "Export To" -> CSV
+2. Check the box that says "Create a file for every table". You are going to create a CSV file for every sheet (table) in the file. You will be asked to name the folder all the CSV files will be saved in - pick something sensible!
+3. Once saved, exit the numbers file.
+3. Copy the CSV file for the "CTD all years" sheet to your labs folder directory.
+5. Open the csv file you just created.
+
+Once you've opened the CSV file
+
+1. Combine the information in the first two rows into the top row: add units after variable names, putting an underscore between variable name and unit e.g., Temperature_C. Delete the 2nd row.
+2. Remove the first three columns, and the column labeled "COND".
+6. Rename the columns by removing spaces and special symbols from column names (underscores can stay!). Tip: when renaming columns, make them something easy to type e.g., minimize use of uppercase, shorten long variable names to common abbreviations. For the DaRTS CTD data we suggest the following: date, station, depth_m, temp_c, sal_psu, density_kg_per_m3, par, fluor_mg_per_m3, turbidity_ntu, beamc_per_m,	O2_umol_per_kg, O2_pct_sat, ph. **You can name your columns however you like, but in later RLabs when we use this data, you'll need to remember what you named your columns, so we strongly recommend you follow our suggested naming**
+3. Press CTRL-F on Windows, or the Command-F on a Mac, to bring up the “Find and Replace” window.
+4. Go to the Replace tab, enter “BLOS” in the “Find What” box and nothing in the “Replace with” box, hit “Replace all” and close the window
+7. Save and close the csv file.
+
+You should be left with a rectangular block of numbers, with the first row as "headers" or column names.
+
+# Formatting Discrete Data
+
+1. Open DaRTS_cruise_data_2012-2025 - 20251117.xlsx (the full data set file) in Excel
+2. Go to the "Depth Discrete Data" sheet
+1. Go to "File" -> "Save As" and select to save the file as a "CSV (Comma delimited)" file named DaRTS_discrete_data (selecting "OK"" to the windows that pop up)
+2. Exit the Excel file (selecting "Don't save" if asked about saving changes) 
+3. Open the csv file you just created in Excel (the easiest way to do this is open Excel, then do "File" -> "Open" -> "Browse", then navigate to the file and select "Open")
+
+Once you've opened the CSV file
+
+1. Rename the column headers in a similar manner to the CTD data: minimize uppercase, remove spaces, combine variable names and units into one column header. **Strongly recommend the following names**: date, cruise, station, lat,	lon,	depth_m,	ph,	alk,	SiO4_uM,	NO3_2_uM,	PO4_uM,	NH4_uM,	total_pico_cells_per_ml,	pico_plankton_cells_per_ml,	bacteria_cells_per_ml,	viral_cells_per_ml,	chl_tot_ug_per_l,	chl_lt20um_ug_per_l,	chl_lt3um_ug_per_l,	flowcam_biomass,	cyanobacteria_cells_per_ml,	picoeukaryotes_cells_per_ml,	noeukaryotes_cells_per_ml,	cryptophytes_cells_per_ml.
+2. Delete the two extra rows at the top of the sheet (i.e., so your column headers are in the first row)
+3. Delete the lat and lon columns
+2. Change the dates `10/1/2013 and 10/4/2013`, etc to `10/1/2013`
+3. Press CTRL-F on Windows, or the Command-F on a Mac, to bring up the “Find and Replace” window.
+4. Go to the Replace tab, enter “Cruise” in the “Find What” box and nothing in the “Replace with” box, hit “Replace all”
+5. Repeat the previous step for the word “NA"
+5. Repeat the previous step for the word “~?" (the ~ is important here, "?" is a wildcard that can be used to mean any character. The ~ before the ? tells Excel we want to search for an actual ?, not any character).
+5. Repeat the previous step for the word “BLOS” and close the window
+6. Delete the rows with “Pier” as a Station value (only occur in 2012)
+7. Make sure the 2nd column is named "cruise" (may have been deleted in the first find and replace step above)
+8. In the "cruise" column, cruises from the Sea Change program are given a number. There are also some cruises from our REU program in the summer, these are all given the label "REU" (even though some years there are multiple REU cruises). We want to make those distinct from each other, so we are going to manually edit those. The first REU cruise is in 2019. We are going to use the naming convention "REU1" for the first REU cruise in a given year, "REU2" for the 2nd in a given year, etc. Manually make this change for all cruises labelled "REU".
+7. Save and close the CSV file.
