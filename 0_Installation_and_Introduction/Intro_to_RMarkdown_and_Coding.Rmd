@@ -1,12 +1,17 @@
 ---
-title: "2 Intro to R Markdown"
+title: "0 Intro to R Markdown"
 author: "Julia Brown + Catherine Mitchell"
 date: "2026-09-10"
 output: 
-  html_notebook: default
-  html_document: default
+  md_document:
+    variant: gfm
   pdf_document: default
-  github_document: default
+  html_document: default
+  html_notebook: default
+  
+knit: (function(input, ...) {
+    rmarkdown::render(input, output_format = "all", envir = globalenv())
+  })
 ---
 
 ```{r setup, include=FALSE}
