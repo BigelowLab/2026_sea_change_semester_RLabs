@@ -1,0 +1,102 @@
+---
+title: "Visualizing DARTS CTD Data -- JMB Live Coding"
+author: "Julia Brown"
+date: "2026-09-17"
+output: 
+  pdf_document: default
+  md_document:
+    variant: gfm
+  html_document: default
+  html_notebook: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load packages that we will need to use for plotting data using R. The package is called "tidyverse" which is a huge set of tools that are great for data analysis and visualization. 
+
+
+```{r}
+library(tidyverse)
+```
+Now let's load our data frame into R. (the csv we just made)
+
+```{r}
+data <- read.csv("240905_darts_clean.csv")
+```
+
+What does our data look like? To see the structure of your data:
+
+```{r}
+str(data)
+```
+
+Plot something! temperature and depth:
+
+```{r}
+ggplot(data, aes(x=temp_c, y=depth_m)) + geom_point()
+```
+
+plotting water column temperature profile for station 1:
+
+```{r}
+stn1 <- filter(data, station == "S1")
+```
+
+== symbol tests for a value to be equivalent to what you provide
+!= choose values not equal to what you provide 
+> "greater than" can apply this test when the column values are integers or numeric values
+< "less than" 
+
+```{r}
+ggplot(stn1, aes(x = temp_c, y = depth_m)) + 
+  geom_point() + 
+  scale_y_reverse() + 
+  xlab('Temperature (C)') + 
+  ylab('Depth (M)') + 
+  ggtitle('Station 1 Temperature Profile')
+```
+
+```{r}
+ggsave('stn1_temp_profile.png', width=4, heigh=6)
+```
+
+plotting profiles from multiple stations at the same time, in the same figure.
+
+```{r}
+ggplot(data, aes(x = temp_c, y = depth_m)) + 
+  geom_point() + 
+  facet_wrap(~station, ncol = 4) + 
+  scale_y_reverse() + 
+  ylim(100, 0) + 
+  xlim(7.5, 18)
+```
+
+Plotting all profiles on the same plot:
+
+```{r}
+ggplot(data, aes(x = temp_c, y = depth_m, color = station)) + 
+  geom_point(size = 1) + 
+  scale_y_reverse() + 
+  labs(color = 'Station')
+```
+
+JMB Scratch after class to play with plotting T-S diagrams for watermasses worksheet:
+
+```{r}
+ggplot(data, aes(y = temp_c, x = sal_psu, color = station)) + 
+  geom_point(size = 1) + 
+  scale_y_reverse() + 
+  labs(color = 'Station')
+```
+
+
+
+
+
+
+
+
+
+
