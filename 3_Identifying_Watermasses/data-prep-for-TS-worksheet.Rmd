@@ -1,0 +1,187 @@
+---
+title: "Data-prep-for-TS-worksheet"
+output: 
+  pdf_document: default
+  github_document: default
+  html_document: default
+  html_notebook: default
+always_allow_html: true
+---
+
+Using Claude to help find some AMT profiles for TS worksheet. We'll identify appropriate CTD casts, and make a csv file containing our selected profiles.
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+# Point this at wherever you unzipped the NCEI download
+parent_dir <- "C:/Users/cmitchell/Documents/SeaChangeSemester/2026/RLabs/data/"
+data_dir <- paste0(parent_dir,"0044519")
+```
+
+What's in the CSV? We know it's come from NCEI and the format these files generally are:
+
+```{r}
+# List everything so you can see how it's organized (per-cast files vs one big file)
+list.files(data_dir, recursive = TRUE) %>% head(20)
+
+# Peek at one file's raw structure before trying to parse it
+read_lines(list.files(data_dir, pattern = "\\.csv$", full.names = TRUE, recursive = TRUE)[1],
+           n_max = 15)
+```
+OK - from this output, we can write functions to read in the data:
+
+```{r}
+parse_dms <- function(x) {
+  # e.g. "36 36 50N" or "017 30 18W" -> decimal degrees
+  hemi <- str_sub(x, -1)
+  nums <- as.numeric(str_extract_all(x, "\\d+\\.?\\d*")[[1]])
+  dd <- nums[1] + nums[2] / 60 + ifelse(length(nums) >= 3, nums[3], 0) / 3600
+  if (hemi %in% c("S", "W")) dd <- -dd
+  dd
+}
+
+read_amt_cast <- function(path) {
+  raw <- read_lines(path)
+
+  meta_names <- str_split(raw[1], ",")[[1]] %>% str_trim()
+  meta_vals  <- str_split(raw[2], ",")[[1]] %>% str_trim()
+  meta <- set_names(as.list(meta_vals), meta_names)
+
+  param_codes <- str_split(raw[3], ",")[[1]] %>% str_trim()
+  param_codes <- param_codes[param_codes != ""]
+
+  col_names <- as.vector(rbind(param_codes, paste0("flag_", param_codes)))
+
+  df <- read_csv(path, skip = 4, col_names = FALSE, show_col_types = FALSE,
+                  na = c("", "NA"))
+  df <- df[, seq_along(col_names)]
+  names(df) <- col_names
+
+  # Pull a column by name if it exists, otherwise return a column of NA
+  get_col <- function(df, name) {
+    if (name %in% names(df)) df[[name]] else rep(NA_real_, nrow(df))
+  }
+
+  tibble(
+    depth = get_col(df, "PRESPR01"),
+    temperature = get_col(df, "TEMPST01"),
+    salinity = get_col(df, "PSALST01"),
+    chlorophyll = get_col(df, "CPHLPR01"),
+    cruise = meta$Cruise,
+    cast_id = meta$Orig._Id,
+    latitude = parse_dms(meta$Latitude),
+    longitude = parse_dms(meta$Longitude),
+    start_date = meta$Start_Date
+  )
+}
+```
+
+Now we can read the data, and find where there's chl data too:
+
+```{r}
+cast_files <- list.files(data_dir, pattern = "\\.csv$", full.names = TRUE, recursive = TRUE)
+
+all_casts <- map_dfr(cast_files, read_amt_cast)
+
+# keep casts with real (non-zero, non-NA) chlorophyll data
+casts_with_chl <- all_casts %>%
+  group_by(cast_id) %>%
+  filter(any(!is.na(chlorophyll) & chlorophyll > 0)) %>%
+  ungroup()
+```
+
+Let's check which cruises have chl profiles:
+```{r}
+cruise_summary <- casts_with_chl %>%
+  distinct(cruise, cast_id, latitude) %>%
+  group_by(cruise) %>%
+  summarise(
+    n_casts = n(),
+    lat_range = max(latitude) - min(latitude),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_casts))
+
+cruise_summary
+```
+Let's select our cruise:
+```{r}
+chosen_cruise <- "AMT12"  # swap in whichever cruise looks best from Step 1
+
+casts_deep_enough <- casts_with_chl %>%
+  group_by(cast_id) %>%
+  filter(max(depth, na.rm = TRUE) > 500) %>%
+  ungroup()
+
+cruise_casts <- casts_deep_enough %>%
+  filter(cruise == chosen_cruise) %>%
+  distinct(cast_id, latitude) %>%
+  arrange(latitude)
+
+cruise_casts  # inspect the actual latitude spread available
+```
+
+And now we can select our profiles:
+```{r}
+# pick the cast nearest each target latitude
+target_lats <- c(45, 25, 0, -25, -50)
+
+chosen_ids <- map_dfr(target_lats, function(t) {
+  cruise_casts %>%
+    distinct(cast_id, latitude) %>%
+    mutate(dist = abs(latitude - t)) %>%
+    slice_min(dist, n = 1)
+})
+
+five_profiles <- casts_with_chl %>% filter(cast_id %in% chosen_ids$cast_id)
+```
+
+
+And finally, plotting:
+
+```{r}
+ggplot(five_profiles, aes(salinity, temperature, color = factor(round(latitude)))) +
+  geom_path(aes(group = cast_id), linewidth = 0.6) +
+  geom_point(size = 1) +
+  labs(x = "Salinity (PSU)", y = "Temperature (°C)", color = "Latitude",
+       title = "T-S diagram: 5 AMT profiles across the Atlantic") +
+  theme_minimal()
+```
+
+plotting by chl:
+
+```{r}
+ggplot(five_profiles, aes(salinity, temperature)) +
+  geom_path(aes(group = cast_id), color = "grey60", linewidth = 0.4) +
+  geom_point(aes(color = chlorophyll), size = 1.8) +
+  scale_color_viridis_c(name = "Chl-a\n(mg/m³)", trans = "log10") +
+  labs(
+    x = "Salinity (PSU)",
+    y = "Temperature (°C)",
+    title = paste("T-S diagram:", chosen_cruise, "— 5 profiles across the transect"),
+    subtitle = "Points colored by chlorophyll-a concentration"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot(five_profiles, aes(salinity, temperature)) +
+  geom_path(aes(group = cast_id), color = "grey60", linewidth = 0.4) +
+  geom_point(aes(color = depth), size = 1.8) +
+  scale_color_viridis_c(name = "Depth (m)", trans = "reverse") +
+  labs(
+    x = "Salinity (PSU)",
+    y = "Temperature (°C)",
+    title = paste("T-S diagram:", chosen_cruise, "— 5 profiles across the transect"),
+    subtitle = "Points colored by depth"
+  ) +
+  theme_minimal()
+```
+
+Saving the file:
+```{r}
+write_csv(five_profiles, paste0(parent_dir,"amt_five_profiles.csv"))
+```
