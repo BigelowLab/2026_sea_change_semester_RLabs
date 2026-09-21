@@ -1,0 +1,264 @@
+---
+title: "Exploring Ocean Data with R and Generative AI"
+subtitle: "An Introductory Data Visualization Tutorial"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.width = 8, fig.height = 5)
+```
+
+## Welcome
+
+In this tutorial you'll practice two skills at once:
+
+1. **Making good visualizations of oceanographic data in R**, using `ggplot2`.
+2. **Working with a generative AI assistant (like Claude, ChatGPT, or Copilot) as a coding partner** — describing your data and your goal clearly enough that the AI can help you write, debug, and improve plotting code.
+
+You will not be handed a data file. Instead, you'll generate a realistic **simulated** oceanographic dataset directly in R. This means you can run every step of this tutorial right now, on any machine with R installed, with no downloads required — and it means the numbers are fake, so don't draw scientific conclusions from them. The *structure* of the data (stations, depths, dates, and the usual CTD/rosette variables) mimics a real repeat-station monitoring program.
+
+### A note on using AI well
+
+Generative AI is very good at writing `ggplot2` boilerplate quickly, and very bad at knowing what your data actually looks like unless you tell it. Throughout this tutorial you'll see boxes like this:
+
+> **🤖 Try this prompt:**
+> *"I have an R data frame called `ocean_data` with columns `date`, `station`, `depth` (meters), and `temperature` (°C). Write ggplot2 code to plot a depth profile of temperature for a single date, faceted by station, with depth increasing downward on the y-axis."*
+
+Copy a prompt like that into your AI assistant of choice, run the code it gives you, and then compare it to the worked example immediately below. They won't be identical — that's fine. The goal is to notice *what information in the prompt shaped the code you got back*, and to build the habit of always specifying: **what your columns mean, what plot type you want, and what the axes/encoding should be.**
+
+---
+
+## Part 1: Simulate the dataset
+
+Run this chunk to create `ocean_data`. It represents five stations sampled monthly from spring through late summer, with a CTD cast (temperature, salinity, density, PAR, fluorescence, turbidity, oxygen, nutrients) taken at 2-meter depth intervals down to 60 m at each station on each date.
+
+```{r simulate-data}
+library(tidyverse)
+library(lubridate)
+
+set.seed(42)
+
+# Five stations along an inshore-to-offshore transect
+stations <- tibble(
+  station     = 1:5,
+  lat         = c(43.70, 43.55, 43.40, 43.25, 43.10),
+  lon         = c(-69.90, -69.70, -69.50, -69.30, -69.10),
+  distance_km = c(2, 15, 35, 60, 90)   # rough distance from shore
+)
+
+# Monthly sampling dates, spring through late summer
+sample_dates <- seq(as.Date("2023-04-15"), as.Date("2023-09-15"), by = "1 month")
+
+# CTD depth bins
+sample_depths <- seq(0, 60, by = 2)
+
+ocean_data <- expand_grid(station = stations$station,
+                           date    = sample_dates,
+                           depth   = sample_depths) %>%
+  left_join(stations, by = "station") %>%
+  mutate(
+    doy    = yday(date),
+    season = sin(2 * pi * (doy - 100) / 365),          # peaks mid-summer
+
+    # Temperature: warm surface layer over a thermocline that deepens
+    # offshore and in summer
+    thermocline  = 15 + 10 * season + distance_km / 10,
+    surface_temp = 8 + 10 * pmax(season, 0) + rnorm(n(), 0, 0.5),
+    temperature  = surface_temp -
+      (surface_temp - 4) / (1 + exp(-(depth - thermocline) / 5)) +
+      rnorm(n(), 0, 0.3),
+
+    # Salinity: fresher at the surface nearshore in summer (river runoff),
+    # increasing with depth
+    surface_sal = 31 - 2 * pmax(season, 0) * (1 - distance_km / 100) +
+      rnorm(n(), 0, 0.2),
+    salinity = surface_sal + (33 - surface_sal) * (depth / max(sample_depths)) +
+      rnorm(n(), 0, 0.1),
+
+    # Density: simplified function of temperature/salinity (NOT a real
+    # equation of state -- for teaching purposes only)
+    density = 1000 + 0.8 * salinity - 0.2 * temperature + rnorm(n(), 0, 0.2),
+
+    # PAR: exponential attenuation with depth, more light in summer
+    par_surface = 1800 * pmax(season * 0.5 + 0.5, 0.2),
+    par = pmax(par_surface * exp(-depth / 8) + rnorm(n(), 0, 2), 0),
+
+    # Fluorescence: subsurface chlorophyll max near the thermocline,
+    # with a spring bloom pulse
+    bloom_intensity = 8 * exp(-((doy - 135)^2) / (2 * 20^2)) + 1,
+    fluorescence = pmax(
+      bloom_intensity * exp(-((depth - (thermocline - 5))^2) / (2 * 8^2)) +
+        rnorm(n(), 0, 0.1),
+      0.05
+    ),
+
+    # Turbidity: higher nearshore and near the surface
+    turbidity = pmax(
+      2 + 6 * exp(-distance_km / 20) + 3 * exp(-depth / 5) + rnorm(n(), 0, 0.3),
+      0.1
+    ),
+
+    # Dissolved oxygen: decreases with depth, boosted by productivity
+    O2 = 300 - depth * 0.8 + fluorescence * 5 + rnorm(n(), 0, 5),
+
+    # Nutrients: drawn down where fluorescence (productivity) is high,
+    # regenerated at depth
+    nutrients = pmax(12 - fluorescence * 1.2 + depth * 0.05 + rnorm(n(), 0, 0.5), 0)
+  ) %>%
+  select(date, station, lat, lon, depth, temperature, salinity, density,
+         par, fluorescence, turbidity, O2, nutrients)
+
+glimpse(ocean_data)
+```
+
+Take a moment to look at the output of `glimpse()`. This is exactly the kind of description you should be able to give an AI assistant: column names, units, and what a row represents ("one depth bin, at one station, on one sampling date").
+
+---
+
+## Part 2: The AI-assisted workflow
+
+A weak prompt gets weak code. Compare:
+
+**❌ Weak:** *"Make a plot of temperature."*
+
+**✅ Strong:** *"I have an R tibble `ocean_data` with one row per depth-station-date combination. Columns include `depth` (m, positive down), `temperature` (°C), and `station` (1-5). Write ggplot2 code for a classic oceanographic depth profile — temperature on the x-axis, depth on the y-axis with depth increasing downward — for a single sampling date, with one small panel per station."*
+
+The strong version tells the AI: the data's shape, the units, the convention (depth increases downward — this trips up every AI assistant if you don't say it), and the plot type by name. Use this pattern for every exercise below: **describe the data → name the plot type → specify the encoding (what goes on x, y, color, size, facets).**
+
+---
+
+## Part 3: Guided exercises
+
+### Exercise 1 — Depth profile
+
+> **🤖 Try this prompt:** *"Using `ocean_data` (columns: date, station, depth, temperature — depth in meters, positive down), write ggplot2 code showing a temperature depth profile for the date 2023-07-15, with depth on a reversed y-axis (surface at top) and one facet panel per station."*
+
+```{r depth-profile}
+one_cruise <- ocean_data %>% filter(date == as.Date("2023-07-15"))
+
+ggplot(one_cruise, aes(x = temperature, y = depth)) +
+  geom_path() +
+  geom_point(size = 1) +
+  scale_y_reverse() +
+  facet_wrap(~ station, nrow = 1, labeller = label_both) +
+  labs(x = "Temperature (°C)", y = "Depth (m)",
+       title = "Temperature depth profiles, 15 July 2023") +
+  theme_minimal()
+```
+
+**Discuss:** Which station has the shallowest thermocline? Does that match the offshore-to-inshore pattern you'd expect?
+
+### Exercise 2 — Time series
+
+> **🤖 Try this prompt:** *"Using `ocean_data`, filter to surface measurements only (depth == 0) and plot surface temperature over time, with a separate colored line for each station."*
+
+```{r time-series}
+surface_data <- ocean_data %>% filter(depth == 0)
+
+ggplot(surface_data, aes(x = date, y = temperature, color = factor(station))) +
+  geom_line(linewidth = 1) +
+  geom_point() +
+  labs(x = "Date", y = "Surface temperature (°C)", color = "Station",
+       title = "Seasonal surface temperature by station") +
+  theme_minimal()
+```
+
+**Discuss:** Do all stations warm at the same rate? What might cause an offshore station to lag behind a nearshore one?
+
+### Exercise 3 — Temperature-salinity (T-S) diagram
+
+> **🤖 Try this prompt:** *"Using `ocean_data`, create a temperature-salinity (T-S) diagram: salinity on the x-axis, temperature on the y-axis, points colored by density, using a perceptually uniform color scale."*
+
+```{r ts-diagram}
+ggplot(ocean_data, aes(x = salinity, y = temperature, color = density)) +
+  geom_point(alpha = 0.6) +
+  scale_color_viridis_c() +
+  labs(x = "Salinity (PSU)", y = "Temperature (°C)", color = "Density\n(kg/m³)",
+       title = "Temperature-Salinity Diagram") +
+  theme_minimal()
+```
+
+**Discuss:** T-S diagrams are used to identify water masses. Do you see distinct clusters here, or a continuous gradient? What process in our simulation would create clusters vs. a gradient?
+
+### Exercise 4 — Station map
+
+> **🤖 Try this prompt:** *"Using `ocean_data`, compute the mean fluorescence at each station (using its lat/lon), then plot station locations as points on a longitude-latitude map, with point color and size mapped to mean fluorescence."*
+
+```{r station-map}
+station_summary <- ocean_data %>%
+  group_by(station, lat, lon) %>%
+  summarize(mean_fluorescence = mean(fluorescence), .groups = "drop")
+
+ggplot(station_summary, aes(x = lon, y = lat,
+                             size = mean_fluorescence, color = mean_fluorescence)) +
+  geom_point() +
+  scale_color_viridis_c() +
+  coord_fixed(ratio = 1.3) +
+  labs(x = "Longitude", y = "Latitude",
+       size = "Mean\nfluorescence", color = "Mean\nfluorescence",
+       title = "Station locations colored by mean fluorescence") +
+  theme_minimal()
+```
+
+**Discuss:** `coord_fixed()` keeps degrees of latitude and longitude visually comparable. Ask your AI assistant why that matters for maps and what `coord_fixed(ratio = 1.3)` is doing at this latitude.
+
+### Exercise 5 — Depth-time section plot
+
+> **🤖 Try this prompt:** *"Using `ocean_data` filtered to station 3, create a depth-time 'section' plot: date on the x-axis, depth on a reversed y-axis, and temperature mapped to fill color using geom_tile or geom_contour_filled."*
+
+```{r section-plot}
+station3 <- ocean_data %>% filter(station == 3)
+
+ggplot(station3, aes(x = date, y = depth, fill = temperature)) +
+  geom_tile() +
+  scale_y_reverse() +
+  scale_fill_viridis_c(option = "inferno") +
+  labs(x = "Date", y = "Depth (m)", fill = "Temperature (°C)",
+       title = "Temperature section at Station 3, 2023") +
+  theme_minimal()
+```
+
+**Discuss:** Our sampling *dates* aren't evenly spaced (calendar months have different lengths), even though our sampling *depths* are. If you ask an AI assistant for this plot, it will very likely suggest `geom_raster()` first, since that's the more common answer online — try it and you should see a warning that pixels are being shifted, because `geom_raster()` assumes equal spacing. `geom_tile()` doesn't make that assumption and draws each tile correctly sized. This is a good example of why you should always look at your plot (and any warnings!) rather than trusting AI-generated code on sight. Now ask your assistant: what would you need to do differently if sampling *depths* were also irregular from cruise to cruise (e.g., a CTD cast that didn't hit the same bins every time)?
+
+---
+
+## Part 4: Independent challenge
+
+Pick **one** pair of variables from `ocean_data` that we haven't plotted together yet (e.g., `turbidity` vs. `depth`, `nutrients` vs. `fluorescence`, `par` vs. `depth` on a log scale, or `O2` over time by station).
+
+1. Write your own prompt following the pattern from Part 2 (describe the data → name the plot type → specify the encoding).
+2. Get code from your AI assistant and run it.
+3. Evaluate the result using the checklist below **before** trusting it.
+
+### Checklist for evaluating AI-generated plotting code
+
+- [ ] Does it use the correct column names from `ocean_data` (not invented ones)?
+- [ ] Are axes labeled with units, not just raw column names?
+- [ ] Is the geometry appropriate for the data (e.g., `geom_line` for a true time series, not scattered categorical dates)?
+- [ ] If depth is an axis, does it increase downward (`scale_y_reverse()`)?
+- [ ] Is the color palette colorblind-safe and appropriate for the data type (`scale_*_viridis_*` for continuous, a qualitative palette for categories)?
+- [ ] Does the plot title/caption say what the data actually represents (including that it's simulated, if you're presenting it)?
+- [ ] Did you run the code and look at the plot — not just assume it worked?
+
+---
+
+## Part 5: Reflection
+
+Discuss with a partner or write a short paragraph:
+
+- Where did the AI's first attempt need correction? What was missing from your original prompt that caused it?
+- Which exercise's plot type was new to you before this tutorial? What is it useful for in real oceanographic work?
+- If you handed a classmate only the AI-generated code (no plot output), could they tell from the code alone what the plot should look like? Why does that matter for reproducible science?
+
+---
+
+## Appendix: Session info
+
+```{r session-info}
+sessionInfo()
+```
