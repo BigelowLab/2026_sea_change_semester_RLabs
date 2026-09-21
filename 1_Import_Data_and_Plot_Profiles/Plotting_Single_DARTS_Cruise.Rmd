@@ -208,7 +208,7 @@ ggplot(data, aes(x = temp_c, y = depth_m)) +
 
 ### Single plot for all stations
 
-Here, we add an additional argument to the call to `aes` to plot each station's data a different color:
+Here, we add an additional argument to the call to `aes` to plot each station's data a different:
 
 ```{r}
 ggplot(data, aes(x = temp_c, y = depth_m, color = factor(station))) +
@@ -241,6 +241,5 @@ Bonus questions:
 
 a. Can you change the color, shape and/or size of the dots in the facet plot?
 b. Can you change the color, shape and/or size of the dots in the single plot?
-
 
 
